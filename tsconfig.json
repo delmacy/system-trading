@@ -15,7 +15,7 @@
     "types": ["node"],
     "noImplicitAny": true
   },
-  "exclude": ["node_modules", "dist", "packages/*/dist"],
+  "exclude": ["node_modules", "dist", "packages"],
   "references": [
     { "path": "./packages/trading-protocols" }
   ]
