@@ -128,3 +128,22 @@ Nenhuma arquitetura deve permanecer por mais de uma sprint sem produzir uma entr
 ## Aviso
 
 Este projeto é uma plataforma de pesquisa e engenharia. Nenhuma estratégia, métrica ou resultado representa garantia de retorno financeiro.
+## Pré-requisitos e Execução Local
+
+Este projeto utiliza npm workspaces. Para começar a contribuir, instale as dependências listadas abaixo e execute os comandos de verificação:
+
+- **Node.js**: `24.x` ou superior
+- **npm**: `11.x` ou superior
+
+Para instalar as dependências a partir do arquivo de lockfile (`package-lock.json`):
+
+```bash
+npm ci
+```
+
+### Comandos Disponíveis
+
+- `npm run lint`: Executa a análise estática (lint) via ESLint.
+- `npm run typecheck`: Executa a verificação de tipos via TypeScript.
+- `npm test`: Executa todos os testes usando o test runner nativo do Node.js.
+- `npm run build`: Compila o projeto Typescript em `dist/`.
