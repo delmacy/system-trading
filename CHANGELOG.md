@@ -8,6 +8,7 @@ O formato segue a ideia de Keep a Changelog e o projeto pretende usar versioname
 
 ### Added
 - pacote `trading-domain` com schema de validação para `PatternDefinition`.
+- schema de validação para `ContextDefinition` com os estados de mercado documentados e os sete estados de lifecycle de definição.
 - implementaçao baseline em Node.js (v24), TypeScript, npm (v11) workspaces.
 - pacote `trading-protocols` com envelope de evento canônico e validação via `zod`.
 - scripts locais para lint, teste (`node:test`), typecheck e build.
