@@ -18,6 +18,10 @@ Critério demonstrável: o workspace System Trading aparece na plataforma com me
 
 ## ST-S02 — Registries
 
+Plano executivo consolidado: [`ST-S02-SPRINT.md`](ST-S02-SPRINT.md).
+
+Primeira task order: [`tasks/ST-S02-001.md`](tasks/ST-S02-001.md).
+
 Objetivo: registrar conhecimento sem depender de arquivos soltos.
 
 Entregas:
