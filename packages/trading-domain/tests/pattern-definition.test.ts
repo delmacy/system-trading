@@ -78,6 +78,39 @@ describe('PatternDefinition', () => {
     }, /Invalid enum value/i);
   });
 
+  it('should reject invalid prerelease characters (e.g. 1.0.0-a[)', () => {
+    assert.throws(() => {
+      validatePatternDefinition({ ...validPattern, version: '1.0.0-a[' });
+    }, /Invalid semantic version/i);
+  });
+
+  it('should reject invalid prerelease characters after dot (e.g. 1.0.0-alpha.!]', () => {
+    assert.throws(() => {
+      validatePatternDefinition({ ...validPattern, version: '1.0.0-alpha.!]' });
+    }, /Invalid semantic version/i);
+  });
+
+  it('should reject invalid build characters (e.g. 1.0.0+123[build)', () => {
+    assert.throws(() => {
+      validatePatternDefinition({ ...validPattern, version: '1.0.0+123[build' });
+    }, /Invalid semantic version/i);
+  });
+
+  it('should accept valid semantic version prerelease', () => {
+    const result = validatePatternDefinition({ ...validPattern, version: '1.0.0-alpha.1.beta.2' });
+    assert.strictEqual(result.version, '1.0.0-alpha.1.beta.2');
+  });
+
+  it('should accept valid semantic version with build metadata', () => {
+    const result = validatePatternDefinition({ ...validPattern, version: '2.3.4+build.5-rc9' });
+    assert.strictEqual(result.version, '2.3.4+build.5-rc9');
+  });
+
+  it('should accept valid semantic version with prerelease and build metadata', () => {
+    const result = validatePatternDefinition({ ...validPattern, version: '1.0.0-rc.1+build.1' });
+    assert.strictEqual(result.version, '1.0.0-rc.1+build.1');
+  });
+
   it('should accept empty favourable_contexts', () => {
     const result = validatePatternDefinition({ ...validPattern, favorable_contexts: [] });
     assert.deepStrictEqual(result.favorable_contexts, []);
