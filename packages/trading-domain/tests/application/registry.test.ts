@@ -96,8 +96,32 @@ class InMemoryRegistry implements PatternStore, ContextStore, DatasetStore, Hypo
       | ExperimentDefinition
       | StrategyVersion,
   ): Promise<void> {
-    const key = this.key(String(record['pattern_id'] ?? record['context_id'] ?? record['dataset_id'] ?? record['hypothesis_id'] ?? record['experiment_id'] ?? record['strategy_id']), String(record['version']));
-    const aggregateType = 'pattern_id' in record ? 'pattern' : 'context_id' in record ? 'context' : 'dataset_id' in record ? 'dataset' : 'hypothesis_id' in record ? 'hypothesis' : 'experiment_id' in record ? 'experiment' : 'strategy';
+    const aggregateType: string =
+      'pattern_id' in record
+        ? 'pattern'
+        : 'context_id' in record
+          ? 'context'
+          : 'dataset_id' in record
+            ? 'dataset'
+            : 'hypothesis_id' in record
+              ? 'hypothesis'
+              : 'experiment_id' in record
+                ? 'experiment'
+                : 'strategy';
+    const id: string = String(
+      'pattern_id' in record
+        ? record.pattern_id
+        : 'context_id' in record
+          ? record.context_id
+          : 'dataset_id' in record
+            ? record.dataset_id
+            : 'hypothesis_id' in record
+              ? record.hypothesis_id
+              : 'experiment_id' in record
+                ? record.experiment_id
+                : record.strategy_id,
+    );
+    const key = this.key(id, String(record.version));
     if (aggregateType === 'pattern') {
       this.patterns.set(key, record as PatternDefinition);
     } else if (aggregateType === 'context') {
@@ -113,6 +137,13 @@ class InMemoryRegistry implements PatternStore, ContextStore, DatasetStore, Hypo
     }
   }
 
+  async findByIdAndVersion(id: string, version: string): Promise<PatternDefinition | ContextDefinition | DatasetDefinition | Hypothesis | ExperimentDefinition | StrategyVersion | null>;
+  async findByIdAndVersion(id: string, version: string): Promise<PatternDefinition | null>;
+  async findByIdAndVersion(id: string, version: string): Promise<ContextDefinition | null>;
+  async findByIdAndVersion(id: string, version: string): Promise<DatasetDefinition | null>;
+  async findByIdAndVersion(id: string, version: string): Promise<Hypothesis | null>;
+  async findByIdAndVersion(id: string, version: string): Promise<ExperimentDefinition | null>;
+  async findByIdAndVersion(id: string, version: string): Promise<StrategyVersion | null>;
   async findByIdAndVersion(id: string, version: string): Promise<PatternDefinition | ContextDefinition | DatasetDefinition | Hypothesis | ExperimentDefinition | StrategyVersion | null> {
     return (
       this.patterns.get(this.key(id, version)) ??
