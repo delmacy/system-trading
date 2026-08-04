@@ -97,7 +97,11 @@ export class FileTradingLabInstallationStore implements TradingLabInstallationSt
     try {
       raw = await fs.readFile(this.filePath, 'utf8');
     } catch (error) {
-      if (error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+      if (
+        error instanceof Error &&
+        ((error as NodeJS.ErrnoException).code === 'ENOENT' ||
+          (error as NodeJS.ErrnoException).code === 'EISDIR')
+      ) {
         return null;
       }
       throw new TradingLabInstallError(
