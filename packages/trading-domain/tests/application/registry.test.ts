@@ -1,22 +1,6 @@
 import { describe, it } from 'node:test';
 import * as assert from 'node:assert';
-import type { EventEnvelope } from 'trading-protocols';
-import type { PatternDefinition } from '../../src/pattern-definition.js';
-import type { ContextDefinition } from '../../src/context-definition.js';
-import type { DatasetDefinition } from '../../src/dataset-definition.js';
-import type { Hypothesis } from '../../src/hypothesis.js';
-import type { ExperimentDefinition } from '../../src/experiment-definition.js';
-import type { StrategyVersion } from '../../src/strategy.js';
-import type {
-  ContextStore,
-  DatasetStore,
-  ExperimentStore,
-  HypothesisStore,
-  PatternStore,
-  StrategyStore,
-  RegistryReferenceLookup,
-  EventPublisher,
-} from '../../src/application/ports.js';
+import type { CommandContext } from '../../src/application/registry.js';
 import {
   registerPattern,
   queryPattern,
@@ -32,7 +16,6 @@ import {
   registerStrategy,
   queryStrategy,
   publishStrategyVersion,
-  type CommandContext,
 } from '../../src/application/registry.js';
 import {
   RegistryNotFoundError,
@@ -40,6 +23,8 @@ import {
   RegistryVersionExistsError,
   RegistryVersionPublishedError,
 } from '../../src/application/errors.js';
+import { InMemoryRegistry, RecordingPublisher } from '../adapters/in-memory-registry.js';
+import { makePattern, makeContext, makeDataset, makeHypothesis, makeExperiment, makeStrategy } from '../fixtures/registry-fixtures.js';
 
 const ctx: CommandContext = {
   workspace_id: '123e4567-e89b-12d3-a456-426614174000',
@@ -48,240 +33,6 @@ const ctx: CommandContext = {
   producer: 'registry-test',
   correlation_id: '123e4567-e89b-12d3-a456-426614174001',
 };
-
-class InMemoryRegistry implements PatternStore, ContextStore, DatasetStore, HypothesisStore, ExperimentStore, StrategyStore, RegistryReferenceLookup {
-  patterns = new Map<string, PatternDefinition>();
-  contexts = new Map<string, ContextDefinition>();
-  datasets = new Map<string, DatasetDefinition>();
-  hypotheses = new Map<string, Hypothesis>();
-  experiments = new Map<string, ExperimentDefinition>();
-  strategies = new Map<string, StrategyVersion>();
-
-  private key(id: string, version: string): string {
-    return `${id}@${version}`;
-  }
-
-  async patternExists(id: string, version: string): Promise<boolean> {
-    return this.patterns.has(this.key(id, version));
-  }
-
-  async contextExists(id: string, version: string): Promise<boolean> {
-    return this.contexts.has(this.key(id, version));
-  }
-
-  async datasetExists(id: string, version: string): Promise<boolean> {
-    return this.datasets.has(this.key(id, version));
-  }
-
-  async hypothesisExists(id: string, version: string): Promise<boolean> {
-    return this.hypotheses.has(this.key(id, version));
-  }
-
-  async experimentExists(id: string, version: string): Promise<boolean> {
-    return this.experiments.has(this.key(id, version));
-  }
-
-  async save(pattern: PatternDefinition): Promise<void>;
-  async save(context: ContextDefinition): Promise<void>;
-  async save(dataset: DatasetDefinition): Promise<void>;
-  async save(hypothesis: Hypothesis): Promise<void>;
-  async save(experiment: ExperimentDefinition): Promise<void>;
-  async save(strategy: StrategyVersion): Promise<void>;
-  async save(
-    record:
-      | PatternDefinition
-      | ContextDefinition
-      | DatasetDefinition
-      | Hypothesis
-      | ExperimentDefinition
-      | StrategyVersion,
-  ): Promise<void> {
-    const aggregateType: string =
-      'pattern_id' in record
-        ? 'pattern'
-        : 'context_id' in record
-          ? 'context'
-          : 'dataset_id' in record
-            ? 'dataset'
-            : 'hypothesis_id' in record
-              ? 'hypothesis'
-              : 'experiment_id' in record
-                ? 'experiment'
-                : 'strategy';
-    const id: string = String(
-      'pattern_id' in record
-        ? record.pattern_id
-        : 'context_id' in record
-          ? record.context_id
-          : 'dataset_id' in record
-            ? record.dataset_id
-            : 'hypothesis_id' in record
-              ? record.hypothesis_id
-              : 'experiment_id' in record
-                ? record.experiment_id
-                : record.strategy_id,
-    );
-    const key = this.key(id, String(record.version));
-    if (aggregateType === 'pattern') {
-      this.patterns.set(key, record as PatternDefinition);
-    } else if (aggregateType === 'context') {
-      this.contexts.set(key, record as ContextDefinition);
-    } else if (aggregateType === 'dataset') {
-      this.datasets.set(key, record as DatasetDefinition);
-    } else if (aggregateType === 'hypothesis') {
-      this.hypotheses.set(key, record as Hypothesis);
-    } else if (aggregateType === 'experiment') {
-      this.experiments.set(key, record as ExperimentDefinition);
-    } else {
-      this.strategies.set(key, record as StrategyVersion);
-    }
-  }
-
-  async findByIdAndVersion(id: string, version: string): Promise<PatternDefinition | ContextDefinition | DatasetDefinition | Hypothesis | ExperimentDefinition | StrategyVersion | null>;
-  async findByIdAndVersion(id: string, version: string): Promise<PatternDefinition | null>;
-  async findByIdAndVersion(id: string, version: string): Promise<ContextDefinition | null>;
-  async findByIdAndVersion(id: string, version: string): Promise<DatasetDefinition | null>;
-  async findByIdAndVersion(id: string, version: string): Promise<Hypothesis | null>;
-  async findByIdAndVersion(id: string, version: string): Promise<ExperimentDefinition | null>;
-  async findByIdAndVersion(id: string, version: string): Promise<StrategyVersion | null>;
-  async findByIdAndVersion(id: string, version: string): Promise<PatternDefinition | ContextDefinition | DatasetDefinition | Hypothesis | ExperimentDefinition | StrategyVersion | null> {
-    return (
-      this.patterns.get(this.key(id, version)) ??
-      this.contexts.get(this.key(id, version)) ??
-      this.datasets.get(this.key(id, version)) ??
-      this.hypotheses.get(this.key(id, version)) ??
-      this.experiments.get(this.key(id, version)) ??
-      this.strategies.get(this.key(id, version)) ??
-      null
-    );
-  }
-
-  async isPublished(id: string, version: string): Promise<boolean> {
-    const key = this.key(id, version);
-    const pattern = this.patterns.get(key);
-    if (pattern !== undefined) {
-      return pattern.status !== 'Draft';
-    }
-    const strategy = this.strategies.get(key);
-    if (strategy !== undefined) {
-      return strategy.lifecycle !== 'Draft';
-    }
-    return false;
-  }
-}
-
-class RecordingPublisher implements EventPublisher {
-  events: EventEnvelope[] = [];
-
-  async publish(event: EventEnvelope): Promise<void> {
-    this.events.push(event);
-  }
-}
-
-const makePattern = (id = '123e4567-e89b-12d3-a456-426614174010'): PatternDefinition => ({
-  pattern_id: id,
-  name: 'Bullish Engulfing',
-  family: 'candle structure',
-  description: 'A bullish engulfing pattern',
-  version: '1.0.0',
-  eligible_markets: ['B3:WIN'],
-  eligible_timeframes: ['M5'],
-  required_data: ['OHLCV'],
-  deterministic_criteria: { body_ratio: 'greater_than_previous' },
-  parameters: {},
-  tolerances: {},
-  favorable_contexts: ['uptrend'],
-  unfavorable_contexts: [],
-  invalidation_signals: [],
-  references: [],
-  status: 'Draft',
-  author: 'jules@delmacy',
-  authored_at: '2023-10-25T10:00:00Z',
-  detector_association: 'engulfing-detector-v1',
-});
-
-const makeContext = (): ContextDefinition => ({
-  context_id: '123e4567-e89b-12d3-a456-426614174011',
-  name: 'High Volatility',
-  description: 'High volatility context',
-  version: '1.0.0',
-  supported_states: ['high_volatility'],
-  required_features: ['atr'],
-  parameters: {},
-  lifecycle: 'Draft',
-  author: 'jules@delmacy',
-  authored_at: '2023-10-25T10:00:00Z',
-});
-
-const makeDataset = (): DatasetDefinition => ({
-  dataset_id: '123e4567-e89b-12d3-a456-426614174012',
-  name: 'B3 WIN M5',
-  description: 'M5 candles',
-  source: 'provider',
-  license: 'internal',
-  instruments: ['B3:WIN'],
-  resolution: 'M5',
-  period: { start: '2023-01-01T00:00:00Z', end: '2023-12-31T23:55:00Z' },
-  timezone: 'America/Sao_Paulo',
-  schema_reference: 'ohlc-csv-v1',
-  version: '1.0.0',
-  checksum: 'sha256:abc',
-  transformations: [],
-  adjustments: [],
-  known_gaps: [],
-  artifact_location: 's3://datasets/b3-win',
-  ingested_at: '2024-01-05T10:00:00Z',
-  owner: 'data@delmacy',
-  lifecycle: 'Ready',
-});
-
-const makeHypothesis = (): Hypothesis => ({
-  hypothesis_id: '123e4567-e89b-12d3-a456-426614174013',
-  statement: 'Bullish engulfing at support leads to higher highs',
-  description: 'Continuation hypothesis',
-  version: '1.0.0',
-  subject: 'market',
-  testability_criteria: ['at least 100 samples'],
-  lifecycle: 'Draft',
-  author: 'jules@delmacy',
-  authored_at: '2023-10-25T10:00:00Z',
-});
-
-const makeExperiment = (): ExperimentDefinition => ({
-  experiment_id: '123e4567-e89b-12d3-a456-426614174014',
-  name: 'Engulfing Study',
-  description: 'Evaluates continuation hypothesis',
-  version: '1.0.0',
-  hypothesis_reference: { id: makeHypothesis().hypothesis_id, version: '1.0.0' },
-  dataset_references: [{ id: makeDataset().dataset_id, version: '1.0.0' }],
-  prior_criteria: ['at least 100 samples'],
-  parameters: {},
-  lifecycle: 'Draft',
-  author: 'jules@delmacy',
-  authored_at: '2023-10-25T10:00:00Z',
-});
-
-const makeStrategy = (): StrategyVersion => ({
-  strategy_id: '123e4567-e89b-12d3-a456-426614174015',
-  version: '1.0.0',
-  name: 'Engulfing Continuation',
-  description: 'Entries on bullish engulfing at support',
-  hypothesis_reference: { id: makeHypothesis().hypothesis_id, version: '1.0.0' },
-  experiment_reference: { id: makeExperiment().experiment_id, version: '1.0.0' },
-  pattern_references: [{ id: makePattern().pattern_id, version: '1.0.0' }],
-  context_references: [{ id: makeContext().context_id, version: '1.0.0' }],
-  dataset_eligibility: [{ id: makeDataset().dataset_id, version: '1.0.0' }],
-  parameter_set: { risk_per_trade: 0.01 },
-  rule_descriptors: {
-    entry_rules: [{ name: 'entry', kind: 'pattern', description: 'Entry', parameters: {} }],
-    exit_rules: [{ name: 'exit', kind: 'fixed', description: 'Exit', parameters: {} }],
-    management_rules: [],
-    eligibility_rules: [{ name: 'eligible', kind: 'dataset', description: 'Eligible', parameters: {} }],
-  },
-  lifecycle: 'Draft',
-  author: 'jules@delmacy',
-  authored_at: '2023-10-25T10:00:00Z',
-});
 
 const setupSeededRegistry = (): { registry: InMemoryRegistry; publisher: RecordingPublisher } => {
   const registry = new InMemoryRegistry();
