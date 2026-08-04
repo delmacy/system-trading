@@ -7,6 +7,10 @@ O formato segue a ideia de Keep a Changelog e o projeto pretende usar versioname
 ## [Unreleased]
 
 ### Added
+- pacote `trading-domain` com schema de validação para `StrategyVersion` (agregado com referências versionadas e descritores de regra declarativos).
+- pacote `trading-domain` com schemas de validação para `Hypothesis`, `ExperimentDefinition` e referência versionada (`VersionedReference`).
+- primeira fatia vertical executável do Trading Lab em `trading-domain`, com o caso de uso de instalação (`installTradingLab`): registra o workspace System Trading com metadados de repositório (`delmacy/system-trading`), plataforma (`system-builder`) e capacidade `trading-lab` instalada, persiste o estado em arquivo (`FileTradingLabInstallationStore`) e permite leitura de volta (`loadTradingLab`) com validação de integridade; falhas são estruturadas via `TradingLabInstallError`.
+- catálogo publicado de linguagem ubíqua, decisões arquiteturais iniciais e descritor do workspace no pacote `trading-domain`, com validação e leitura de volta via API (`glossary`, `architecture-decisions`, `workspace`, `catalog`).
 - pacote `trading-domain` com schema de validação para `PatternDefinition`.
 - schema de validação para `ContextDefinition` com os estados de mercado documentados e os sete estados de lifecycle de definição.
 - implementaçao baseline em Node.js (v24), TypeScript, npm (v11) workspaces.
