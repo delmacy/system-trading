@@ -4,3 +4,4 @@ export * from './architecture-decisions.js';
 export * from './workspace.js';
 export * from './catalog.js';
 export * from './trading-lab.js';
+export * from './dataset-definition.js';
