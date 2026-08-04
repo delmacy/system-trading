@@ -12,6 +12,9 @@
     "declaration": true,
     "sourceMap": true,
     "baseUrl": ".",
+    "paths": {
+      "trading-protocols": ["packages/trading-protocols/src/index.ts"]
+    },
     "types": ["node"],
     "noImplicitAny": true
   },

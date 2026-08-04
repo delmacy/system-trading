@@ -9,3 +9,7 @@ export * from './versioned-reference.js';
 export * from './hypothesis.js';
 export * from './experiment-definition.js';
 export * from './strategy.js';
+export * from './application/errors.js';
+export * from './application/ports.js';
+export * from './application/events.js';
+export * from './application/registry.js';
