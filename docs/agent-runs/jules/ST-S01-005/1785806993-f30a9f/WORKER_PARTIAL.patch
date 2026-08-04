@@ -1,0 +1,725 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index f1ff642..4c3a729 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,7 @@ O formato segue a ideia de Keep a Changelog e o projeto pretende usar versioname
+ ## [Unreleased]
+
+ ### Added
++- catálogo publicado de linguagem ubíqua, decisões arquiteturais iniciais e descritor do workspace no pacote `trading-domain`, com validação e leitura de volta via API (`glossary`, `architecture-decisions`, `workspace`, `catalog`).
+ - pacote `trading-domain` com schema de validação para `PatternDefinition`.
+ - implementaçao baseline em Node.js (v24), TypeScript, npm (v11) workspaces.
+ - pacote `trading-protocols` com envelope de evento canônico e validação via `zod`.
+diff --git a/packages/trading-domain/src/architecture-decisions.ts b/packages/trading-domain/src/architecture-decisions.ts
+new file mode 100644
+index 0000000..628d943
+--- /dev/null
++++ b/packages/trading-domain/src/architecture-decisions.ts
+@@ -0,0 +1,108 @@
++import { z } from 'zod';
++
++export const ArchitectureDecisionStatusSchema = z.enum([
++  'Proposed',
++  'Accepted',
++  'Deprecated',
++  'Superseded',
++]);
++
++export type ArchitectureDecisionStatus = z.infer<typeof ArchitectureDecisionStatusSchema>;
++
++export const ArchitectureDecisionScopeSchema = z.enum(['platform', 'trading']);
++
++export type ArchitectureDecisionScope = z.infer<typeof ArchitectureDecisionScopeSchema>;
++
++export const ArchitectureDecisionSchema = z.object({
++  adr_id: z.string().regex(/^ADR-\d{4}$/, 'Invalid ADR id'),
++  title: z.string().min(1),
++  status: ArchitectureDecisionStatusSchema,
++  scope: ArchitectureDecisionScopeSchema,
++  decided_at: z.string().datetime().optional(),
++  summary: z.string().min(1),
++  decisions: z.array(z.string().min(1)).min(1),
++  rules: z.array(z.string().min(1)),
++});
++
++export type ArchitectureDecision = z.infer<typeof ArchitectureDecisionSchema>;
++
++export const ArchitectureDecisionsSchema = z
++  .array(ArchitectureDecisionSchema)
++  .min(1, 'At least one architecture decision is required')
++  .superRefine((adrs, ctx) => {
++    const seen = new Set<string>();
++    adrs.forEach((adr, index) => {
++      if (seen.has(adr.adr_id)) {
++        ctx.addIssue({
++          code: 'custom',
++          message: `Duplicate ADR id: ${adr.adr_id}`,
++          path: [index],
++        });
++      }
++      seen.add(adr.adr_id);
++    });
++  });
++
++export type ArchitectureDecisions = z.infer<typeof ArchitectureDecisionsSchema>;
++
++const canonicalArchitectureDecisions: ArchitectureDecisions = [
++  {
++    adr_id: 'ADR-0001',
++    title: 'System Trading sobre o System Builder',
++    status: 'Accepted',
++    scope: 'platform',
++    summary:
++      'O System Trading será desenvolvido como repositório especializado e aplicação vinculada ao workspace System Trading dentro do System Builder. O System Builder permanece responsável por capabilities genéricas; o System Trading implementa apenas capacidades específicas do domínio quantitativo e integra a plataforma por contratos, SDKs e eventos.',
++    decisions: [
++      'Desenvolver o System Trading como repositório especializado e aplicação vinculada ao workspace System Trading dentro do System Builder.',
++      'Delegar ao System Builder todas as capabilities genéricas e implementar apenas as capacidades específicas do domínio quantitativo.',
++      'Integrar a plataforma por contratos, SDKs e eventos, sem duplicar capabilities genéricas.',
++      'Tratar workspace e repositório como conceitos distintos: um workspace pode consumir uma ou mais aplicações e repositórios.',
++    ],
++    rules: [
++      'Quando uma necessidade do System Trading for genérica e reutilizável, deverá ser proposta no System Builder. Quando for específica de trading, permanecerá neste repositório.',
++    ],
++  },
++  {
++    adr_id: 'ADR-0002',
++    title: 'Contratos de Registry e Ciclo de Vida',
++    status: 'Proposed',
++    scope: 'trading',
++    summary:
++      'Define a chave de identidade e versão dos agregados de definição, o ciclo de vida canônico das definições versionadas, o ciclo de vida específico de Dataset, as regras de imutabilidade e as referências entre agregados, com o documento docs/03-trading/REGISTRY_CONTRACTS.md como fonte única.',
++    decisions: [
++      'Agregados de definição (Pattern, Context, Hypothesis, Experiment, Strategy Version) usam chave de versão composta por (aggregate_id, version): aggregate_id UUID imutável e version semântica.',
++      'Dataset usa dataset_id UUID imutável, versão explícita e checksum imutável da versão.',
++      'Definições versionadas reutilizam o ciclo de vida Draft, Experimental, Validated, Active, Degraded, Deprecated, Archived.',
++      'Dataset mantém o ciclo de vida próprio Draft, Importing, Validating, Ready, Restricted, Deprecated, Archived.',
++      'Referências entre agregados são sempre (id, version) apontando para uma versão específica, nunca para um nome ou registro abstrato.',
++    ],
++    rules: [
++      'docs/03-trading/REGISTRY_CONTRACTS.md é a fonte única dos campos mínimos, identificadores, chaves de versão, referências e ciclos de vida. Qualquer desvio exige novo ADR ou ordem de compatibilidade.',
++      'Nenhuma versão publicada é sobrescrita; correções geram novas versões (PATCH), não edição da publicada.',
++      'Depreciação não remove dados: versões deprecated permanecem legíveis para auditoria e comparação.',
++    ],
++  },
++];
++
++export const architectureDecisions: ArchitectureDecisions = canonicalArchitectureDecisions;
++
++export const validateArchitectureDecisions = (data: unknown): ArchitectureDecisions => {
++  return ArchitectureDecisionsSchema.parse(data);
++};
++
++export const listArchitectureDecisions = (
++  scope?: ArchitectureDecisionScope,
++): ArchitectureDecision[] => {
++  return scope === undefined
++    ? architectureDecisions
++    : architectureDecisions.filter((adr) => adr.scope === scope);
++};
++
++export const getArchitectureDecision = (adrId: string): ArchitectureDecision => {
++  const adr = architectureDecisions.find((candidate) => candidate.adr_id === adrId);
++  if (adr === undefined) {
++    throw new Error(`Unknown architecture decision: ${adrId}`);
++  }
++  return adr;
++};
+diff --git a/packages/trading-domain/src/catalog.ts b/packages/trading-domain/src/catalog.ts
+new file mode 100644
+index 0000000..854cddc
+--- /dev/null
++++ b/packages/trading-domain/src/catalog.ts
+@@ -0,0 +1,17 @@
++import { architectureDecisions, type ArchitectureDecisions } from './architecture-decisions.js';
++import { glossary, type Glossary } from './glossary.js';
++import { getWorkspaceDescriptor, type WorkspaceDescriptor } from './workspace.js';
++
++export type DomainCatalog = {
++  workspace: WorkspaceDescriptor;
++  glossary: Glossary;
++  architecture_decisions: ArchitectureDecisions;
++};
++
++export const getDomainCatalog = (): DomainCatalog => {
++  return {
++    workspace: getWorkspaceDescriptor(),
++    glossary,
++    architecture_decisions: architectureDecisions,
++  };
++};
+diff --git a/packages/trading-domain/src/glossary.ts b/packages/trading-domain/src/glossary.ts
+new file mode 100644
+index 0000000..f88c52e
+--- /dev/null
++++ b/packages/trading-domain/src/glossary.ts
+@@ -0,0 +1,217 @@
++import { z } from 'zod';
++
++export const GlossaryCategorySchema = z.enum([
++  'entity',
++  'process',
++  'decision',
++  'value',
++  'measurement',
++]);
++
++export type GlossaryCategory = z.infer<typeof GlossaryCategorySchema>;
++
++export const GlossaryTermStatusSchema = z.enum(['canonical', 'provisional']);
++
++export type GlossaryTermStatus = z.infer<typeof GlossaryTermStatusSchema>;
++
++export const GlossaryTermSchema = z.object({
++  term: z.string().min(1),
++  definition: z.string().min(1),
++  category: GlossaryCategorySchema,
++  status: GlossaryTermStatusSchema,
++});
++
++export type GlossaryTerm = z.infer<typeof GlossaryTermSchema>;
++
++export const GlossarySchema = z
++  .array(GlossaryTermSchema)
++  .min(1, 'Glossary must contain at least one term')
++  .superRefine((terms, ctx) => {
++    const seen = new Set<string>();
++    terms.forEach((entry, index) => {
++      if (seen.has(entry.term)) {
++        ctx.addIssue({
++          code: 'custom',
++          message: `Duplicate glossary term: ${entry.term}`,
++          path: [index],
++        });
++      }
++      seen.add(entry.term);
++    });
++  });
++
++export type Glossary = z.infer<typeof GlossarySchema>;
++
++const canonicalTerms: Glossary = [
++  {
++    term: 'Account',
++    definition: 'Conta de execução ou simulação associada a broker, prop, ambiente e regras externas.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Allocation',
++    definition: 'Parcela de capital ou risco autorizada para estratégia, conta, instrumento ou grupo.',
++    category: 'decision',
++    status: 'canonical',
++  },
++  {
++    term: 'Backtest',
++    definition: 'Execução histórica de uma estratégia sobre dataset versionado sob regras conhecidas.',
++    category: 'process',
++    status: 'canonical',
++  },
++  {
++    term: 'Context',
++    definition: 'Estado estimado do mercado, representado por evidências e scores.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Dataset',
++    definition: 'Conjunto de dados identificado, versionado e auditável usado por pesquisa ou operação.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Degradation',
++    definition:
++      'Deterioração relevante e persistente de métricas, frequência, distribuição ou comportamento operacional.',
++    category: 'measurement',
++    status: 'canonical',
++  },
++  {
++    term: 'Evidence',
++    definition: 'Observação calculada ou fato registrado que sustenta ou contradiz uma hipótese.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Experiment',
++    definition: 'Procedimento definido para testar uma hipótese usando dados, regras e critérios prévios.',
++    category: 'process',
++    status: 'canonical',
++  },
++  {
++    term: 'Feature',
++    definition: 'Variável calculada a partir de dados de mercado ou estado do sistema.',
++    category: 'value',
++    status: 'canonical',
++  },
++  {
++    term: 'Fill',
++    definition: 'Execução parcial ou total confirmada por broker ou simulador.',
++    category: 'value',
++    status: 'canonical',
++  },
++  {
++    term: 'Hypothesis',
++    definition: 'Afirmação testável sobre comportamento de mercado, estratégia, risco ou execução.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Instrument',
++    definition: 'Ativo negociável com especificações, sessão e regras próprias.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Lab',
++    definition: 'Espaço governado de pesquisa que contém hipóteses, experimentos e decisões.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Opportunity',
++    definition: 'Agregação de sinais compatíveis que representa uma hipótese potencial de trade.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Order Intent',
++    definition: 'Comando interno que descreve uma ordem desejada depois da aprovação de risco.',
++    category: 'decision',
++    status: 'canonical',
++  },
++  {
++    term: 'Pattern',
++    definition: 'Estrutura observável definida por critérios explícitos. Não equivale a ordem.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Portfolio',
++    definition: 'Visão consolidada de capital, estratégias, contas, exposições e risco.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Position',
++    definition: 'Exposição aberta em um instrumento dentro de uma conta.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Risk Decision',
++    definition: 'Resultado auditável da avaliação de uma oportunidade ou exposição por políticas de risco.',
++    category: 'decision',
++    status: 'canonical',
++  },
++  {
++    term: 'Shadow Trade',
++    definition: 'Operação registrada sem envio de ordem real, usando condições temporais correntes ou replay.',
++    category: 'process',
++    status: 'canonical',
++  },
++  {
++    term: 'Signal',
++    definition: 'Evidência atômica produzida por regra, detector ou modelo.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Strategy',
++    definition: 'Conjunto versionado de regras de elegibilidade, entrada, saída, manejo e risco.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Strategy Health',
++    definition: 'Avaliação atual da estabilidade estatística e operacional de uma estratégia.',
++    category: 'measurement',
++    status: 'canonical',
++  },
++  {
++    term: 'Trade',
++    definition: 'Resultado econômico e operacional de uma posição encerrada ou unidade equivalente definida pela estratégia.',
++    category: 'entity',
++    status: 'canonical',
++  },
++  {
++    term: 'Walk-Forward',
++    definition: 'Processo de validação temporal que alterna janelas de calibração e teste fora da amostra.',
++    category: 'process',
++    status: 'canonical',
++  },
++];
++
++export const glossary: Glossary = canonicalTerms;
++
++export const validateGlossary = (data: unknown): Glossary => {
++  return GlossarySchema.parse(data);
++};
++
++export const listGlossaryTerms = (category?: GlossaryCategory): GlossaryTerm[] => {
++  return category === undefined
++    ? glossary
++    : glossary.filter((entry) => entry.category === category);
++};
++
++export const getGlossaryTerm = (term: string): GlossaryTerm => {
++  const entry = glossary.find((candidate) => candidate.term === term);
++  if (entry === undefined) {
++    throw new Error(`Unknown glossary term: ${term}`);
++  }
++  return entry;
++};
+diff --git a/packages/trading-domain/src/index.ts b/packages/trading-domain/src/index.ts
+index f84f2b4..5c2a29d 100644
+--- a/packages/trading-domain/src/index.ts
++++ b/packages/trading-domain/src/index.ts
+@@ -1 +1,5 @@
+ export * from './pattern-definition.js';
++export * from './glossary.js';
++export * from './architecture-decisions.js';
++export * from './workspace.js';
++export * from './catalog.js';
+diff --git a/packages/trading-domain/src/workspace.ts b/packages/trading-domain/src/workspace.ts
+new file mode 100644
+index 0000000..c153fc1
+--- /dev/null
++++ b/packages/trading-domain/src/workspace.ts
+@@ -0,0 +1,44 @@
++import { z } from 'zod';
++
++export const WorkspaceEnvironmentSchema = z.enum([
++  'research',
++  'simulation',
++  'shadow',
++  'production',
++  'archive',
++]);
++
++export type WorkspaceEnvironment = z.infer<typeof WorkspaceEnvironmentSchema>;
++
++export const WorkspaceDescriptorSchema = z.object({
++  name: z.literal('System Trading'),
++  type: z.literal('internal-product'),
++  status: z.literal('incubation'),
++  source_repository: z.literal('delmacy/system-trading'),
++  platform: z.literal('system-builder'),
++  capability_profile: z.literal('trading-lab'),
++  default_environment: WorkspaceEnvironmentSchema,
++  environments: z.array(WorkspaceEnvironmentSchema).min(1),
++  workspace_id: z.string().uuid().optional(),
++});
++
++export type WorkspaceDescriptor = z.infer<typeof WorkspaceDescriptorSchema>;
++
++export const workspaceDescriptor: WorkspaceDescriptor = {
++  name: 'System Trading',
++  type: 'internal-product',
++  status: 'incubation',
++  source_repository: 'delmacy/system-trading',
++  platform: 'system-builder',
++  capability_profile: 'trading-lab',
++  default_environment: 'research',
++  environments: ['research', 'simulation', 'shadow', 'production', 'archive'],
++};
++
++export const validateWorkspaceDescriptor = (data: unknown): WorkspaceDescriptor => {
++  return WorkspaceDescriptorSchema.parse(data);
++};
++
++export const getWorkspaceDescriptor = (): WorkspaceDescriptor => {
++  return workspaceDescriptor;
++};
+diff --git a/packages/trading-domain/tests/architecture-decisions.test.ts b/packages/trading-domain/tests/architecture-decisions.test.ts
+new file mode 100644
+index 0000000..c320674
+--- /dev/null
++++ b/packages/trading-domain/tests/architecture-decisions.test.ts
+@@ -0,0 +1,123 @@
++import { describe, it } from 'node:test';
++import * as assert from 'node:assert';
++import {
++  architectureDecisions,
++  getArchitectureDecision,
++  listArchitectureDecisions,
++  validateArchitectureDecisions,
++} from '../src/architecture-decisions.js';
++
++describe('Published architecture decisions', () => {
++  it('should publish the initial architecture decisions and read them back', () => {
++    assert.ok(architectureDecisions.length >= 2);
++    const foundation = getArchitectureDecision('ADR-0001');
++    assert.strictEqual(foundation.status, 'Accepted');
++    assert.strictEqual(foundation.scope, 'platform');
++    assert.match(foundation.summary, /System Builder/);
++  });
++
++  it('should read back every published ADR', () => {
++    for (const adr of architectureDecisions) {
++      assert.deepStrictEqual(getArchitectureDecision(adr.adr_id), adr);
++    }
++  });
++
++  it('should list decisions filtered by platform scope', () => {
++    const platform = listArchitectureDecisions('platform');
++    assert.ok(platform.every((adr) => adr.scope === 'platform'));
++    assert.deepStrictEqual(
++      platform.map((adr) => adr.adr_id),
++      ['ADR-0001'],
++    );
++  });
++
++  it('should list decisions filtered by trading scope', () => {
++    const trading = listArchitectureDecisions('trading');
++    assert.ok(trading.length > 0);
++    assert.ok(trading.every((adr) => adr.scope === 'trading'));
++  });
++
++  it('should fail meaningfully when reading an unknown ADR', () => {
++    assert.throws(
++      () => getArchitectureDecision('ADR-9999'),
++      /Unknown architecture decision: ADR-9999/,
++    );
++  });
++
++  it('should reject duplicate ADR ids', () => {
++    assert.throws(
++      () => validateArchitectureDecisions([...architectureDecisions, architectureDecisions[0]]),
++      /Duplicate ADR id: ADR-0001/,
++    );
++  });
++
++  it('should reject an invalid ADR id format', () => {
++    assert.throws(
++      () =>
++        validateArchitectureDecisions([
++          {
++            adr_id: 'ADR-1',
++            title: 'Invalid',
++            status: 'Accepted',
++            scope: 'trading',
++            summary: 'summary',
++            decisions: ['decision'],
++            rules: [],
++          },
++        ]),
++      /Invalid ADR id/,
++    );
++  });
++
++  it('should reject an ADR without decisions', () => {
++    assert.throws(
++      () =>
++        validateArchitectureDecisions([
++          {
++            adr_id: 'ADR-0003',
++            title: 'Empty decisions',
++            status: 'Accepted',
++            scope: 'trading',
++            summary: 'summary',
++            decisions: [],
++            rules: [],
++          },
++        ]),
++      /Array must contain at least 1 element/,
++    );
++  });
++
++  it('should reject an invalid status', () => {
++    assert.throws(
++      () =>
++        validateArchitectureDecisions([
++          {
++            adr_id: 'ADR-0003',
++            title: 'Invalid status',
++            status: 'Approved',
++            scope: 'trading',
++            summary: 'summary',
++            decisions: ['decision'],
++            rules: [],
++          },
++        ]),
++      /Invalid enum value/,
++    );
++  });
++
++  it('should accept an ADR with a decided_at timestamp', () => {
++    const result = validateArchitectureDecisions([
++      {
++        adr_id: 'ADR-0003',
++        title: 'With timestamp',
++        status: 'Accepted',
++        scope: 'trading',
++        decided_at: '2026-08-04T00:00:00Z',
++        summary: 'summary',
++        decisions: ['decision'],
++        rules: [],
++      },
++    ]);
++    assert.strictEqual(result[0].decided_at, '2026-08-04T00:00:00Z');
++  });
++});
+diff --git a/packages/trading-domain/tests/catalog.test.ts b/packages/trading-domain/tests/catalog.test.ts
+new file mode 100644
+index 0000000..b1a88d2
+--- /dev/null
++++ b/packages/trading-domain/tests/catalog.test.ts
+@@ -0,0 +1,58 @@
++import { describe, it } from 'node:test';
++import * as assert from 'node:assert';
++import { getDomainCatalog } from '../src/catalog.js';
++import { getWorkspaceDescriptor, validateWorkspaceDescriptor } from '../src/workspace.js';
++
++describe('Published domain catalog', () => {
++  it('should expose workspace, glossary and architecture decisions together', () => {
++    const catalog = getDomainCatalog();
++    assert.strictEqual(catalog.workspace.name, 'System Trading');
++    assert.strictEqual(catalog.workspace.source_repository, 'delmacy/system-trading');
++    assert.strictEqual(catalog.workspace.platform, 'system-builder');
++    assert.strictEqual(catalog.workspace.capability_profile, 'trading-lab');
++    assert.strictEqual(catalog.workspace.default_environment, 'research');
++    assert.ok(catalog.glossary.length > 0);
++    assert.ok(catalog.architecture_decisions.length > 0);
++  });
++
++  it('should validate the persisted workspace descriptor on read-back', () => {
++    const descriptor = validateWorkspaceDescriptor(getWorkspaceDescriptor());
++    assert.strictEqual(descriptor.platform, 'system-builder');
++    assert.deepStrictEqual(descriptor.environments, [
++      'research',
++      'simulation',
++      'shadow',
++      'production',
++      'archive',
++    ]);
++  });
++
++  it('should reject a workspace descriptor with an unallowed capability profile', () => {
++    assert.throws(
++      () => validateWorkspaceDescriptor({ ...getWorkspaceDescriptor(), capability_profile: 'other-lab' }),
++      /Invalid literal value/,
++    );
++  });
++
++  it('should reject a workspace descriptor with an unknown environment', () => {
++    assert.throws(
++      () => validateWorkspaceDescriptor({ ...getWorkspaceDescriptor(), environments: ['research', 'uat'] }),
++      /Invalid enum value/,
++    );
++  });
++
++  it('should reject a workspace descriptor with an invalid repository', () => {
++    assert.throws(
++      () => validateWorkspaceDescriptor({ ...getWorkspaceDescriptor(), source_repository: 'other/repo' }),
++      /Invalid literal value/,
++    );
++  });
++
++  it('should accept an explicitly provisioned workspace_id', () => {
++    const withId = validateWorkspaceDescriptor({
++      ...getWorkspaceDescriptor(),
++      workspace_id: '123e4567-e89b-12d3-a456-426614174000',
++    });
++    assert.strictEqual(withId.workspace_id, '123e4567-e89b-12d3-a456-426614174000');
++  });
++});
+diff --git a/packages/trading-domain/tests/glossary.test.ts b/packages/trading-domain/tests/glossary.test.ts
+new file mode 100644
+index 0000000..9e9915e
+--- /dev/null
++++ b/packages/trading-domain/tests/glossary.test.ts
+@@ -0,0 +1,94 @@
++import { describe, it } from 'node:test';
++import * as assert from 'node:assert';
++import {
++  getGlossaryTerm,
++  glossary,
++  listGlossaryTerms,
++  validateGlossary,
++} from '../src/glossary.js';
++
++describe('Published ubiquitous language', () => {
++  it('should publish the canonical glossary and read terms back', () => {
++    assert.ok(glossary.length >= 20);
++    const backtest = getGlossaryTerm('Backtest');
++    assert.strictEqual(backtest.term, 'Backtest');
++    assert.match(backtest.definition, /dataset versionado/i);
++    assert.strictEqual(backtest.category, 'process');
++  });
++
++  it('should read back every term published in the glossary', () => {
++    for (const entry of glossary) {
++      assert.deepStrictEqual(getGlossaryTerm(entry.term), entry);
++    }
++  });
++
++  it('should list all published terms when no category is given', () => {
++    assert.strictEqual(listGlossaryTerms().length, glossary.length);
++  });
++
++  it('should list terms filtered by decision category', () => {
++    const decisions = listGlossaryTerms('decision');
++    assert.ok(decisions.length > 0);
++    assert.ok(decisions.every((entry) => entry.category === 'decision'));
++    assert.deepStrictEqual(
++      decisions.map((entry) => entry.term).sort(),
++      ['Allocation', 'Order Intent', 'Risk Decision'].sort(),
++    );
++  });
++
++  it('should list terms filtered by value category', () => {
++    assert.deepStrictEqual(
++      listGlossaryTerms('value').map((entry) => entry.term).sort(),
++      ['Feature', 'Fill'].sort(),
++    );
++  });
++
++  it('should fail meaningfully when reading an unknown term', () => {
++    assert.throws(() => getGlossaryTerm('UnknownTerm'), /Unknown glossary term: UnknownTerm/);
++  });
++
++  it('should reject a glossary with duplicate terms', () => {
++    assert.throws(
++      () => validateGlossary([...glossary, glossary[0]]),
++      /Duplicate glossary term: Account/,
++    );
++  });
++
++  it('should reject an empty glossary', () => {
++    assert.throws(() => validateGlossary([]), /Glossary must contain at least one term/);
++  });
++
++  it('should reject a term with an empty definition', () => {
++    assert.throws(
++      () => validateGlossary([{ term: 'New', definition: '', category: 'entity', status: 'canonical' }]),
++      /String must contain at least 1 character/,
++    );
++  });
++
++  it('should reject an invalid category', () => {
++    assert.throws(
++      () =>
++        validateGlossary([
++          { term: 'New', definition: 'definition', category: 'invalid', status: 'canonical' },
++        ]),
++      /Invalid enum value/,
++    );
++  });
++
++  it('should reject an invalid term status', () => {
++    assert.throws(
++      () =>
++        validateGlossary([
++          { term: 'New', definition: 'definition', category: 'entity', status: 'obsolete' },
++        ]),
++      /Invalid enum value/,
++    );
++  });
++
++  it('should accept a provisional term as valid input', () => {
++    const result = validateGlossary([
++      { term: 'Preliminary', definition: 'term under review', category: 'process', status: 'provisional' },
++    ]);
++    assert.strictEqual(result[0].status, 'provisional');
++  });
++});
