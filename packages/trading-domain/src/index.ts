@@ -7,3 +7,4 @@ export * from './trading-lab.js';
 export * from './versioned-reference.js';
 export * from './hypothesis.js';
 export * from './experiment-definition.js';
+export * from './strategy.js';
